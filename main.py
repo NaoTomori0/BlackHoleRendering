@@ -47,7 +47,7 @@ def compute_full_frame(
                     th = -py / (vy + 1e-9)
                     hx, hz = px + vx * th, pz + vz * th
                     r2_d = hx * hx + hz * hz
-                    if 6.0 < r2_d < 300.0:
+                    if 6.0 < r2_d < 100.0:
                         rv = np.sqrt(r2_d)
                         ang = np.arctan2(hz, hx)
                         wave = (
@@ -66,11 +66,11 @@ def compute_full_frame(
 
                         if dist_hit < dist_to_hole:
                             inst += val * 1.6
-                            acc_light += 0.9
+                            acc_light += 0.75
                             if acc_light >= 1.0:
                                 break
                         else:
-                            inst += val * 0.9
+                            inst += val * 0.75
 
                 a = -1.5 * RS / (r2 * r + 1e-6)
                 vx += px * a * DT
@@ -98,7 +98,7 @@ def compute_full_frame(
 
 
 def render():
-    RES = 500
+    RES = 700  # 500
     STEPS = 700
     DT = 0.12
 
@@ -108,7 +108,7 @@ def render():
 
     frame_idx = 0
 
-    cv2.namedWindow("Black Hole", cv2.WINDOW_AUTOSIZE)
+    cv2.namedWindow("Black Hole")
     os.system("cls" if os.name == "nt" else "clear")
     print("Запуск рендера...")
     while True:
@@ -116,7 +116,7 @@ def render():
         t = (frame_idx / 300) * 2 * np.pi
 
         dist = 45.0
-        cx, cy, cz = np.cos(t) * dist, np.sin(t * 0.2) * 10.0, np.sin(t) * dist
+        cx, cy, cz = np.cos(t) * dist, np.sin(t * 0.2) * -15.0, np.sin(t) * dist
         cp = np.array([cx, cy, cz])
         fw = -cp / np.linalg.norm(cp)
         rt = np.array([-np.sin(t), 0, np.cos(t)])
