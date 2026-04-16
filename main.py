@@ -47,7 +47,7 @@ def compute_full_frame(
                     th = -py / (vy + 1e-9)
                     hx, hz = px + vx * th, pz + vz * th
                     r2_d = hx * hx + hz * hz
-                    if 3.5 < r2_d < 100.0:
+                    if 3.5 < r2_d < 60.0:
                         rv = np.sqrt(r2_d)
                         ang = np.arctan2(hz, hx)
                         wave = (
@@ -67,12 +67,12 @@ def compute_full_frame(
                         dist_to_hole = np.sqrt(cx**2 + cy**2 + cz**2)
 
                         if dist_hit < dist_to_hole:
-                            inst += val * 2
+                            inst += val * 1.6
                             acc_light += 0.75
                             if acc_light >= 1.0:
                                 break
                         else:
-                            val *= 0.3
+                            val *= 0.167
                             inst += val * 0.43
 
                 a = -0.95 * RS / (r2 * r + 1e-6)
@@ -104,7 +104,7 @@ def compute_full_frame(
 
 
 def render():
-    RES = 300  # 500
+    RES = 350  # 500
     STEPS = 700
     DT = 0.12
 
@@ -122,7 +122,7 @@ def render():
         t = (frame_idx / 300) * 2 * np.pi
 
         dist = 45.0
-        vertical_angle = -np.radians(15) * np.sin(t * 0.2)
+        vertical_angle = -np.radians(18) * np.sin(t * 0.2)
 
         horizontal_dist = dist * np.cos(vertical_angle)
         cx, cy, cz = (
