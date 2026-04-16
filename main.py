@@ -1,18 +1,19 @@
 import numpy as np
 import cv2
-from numba import njit, prange, config
+from numba import njit, prange, config, set_num_threads
 import os
 import time
 import sys
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter, Namespace, SUPPRESS
 
-os.environ["NUMBA_NUM_THREADS"] = "16"
+# os.environ["NUMBA_NUM_THREADS"] = "16"
 config.THREADING_LAYER = "omp"
 
 
 @njit(parallel=True, fastmath=True, cache=True)
 def compute_full_frame(
     RES, STEPS, DT, RS, t, x, y, cx, cy, cz, fx, fy, fz, rx, ry, rz, ux, uy, uz
-):
+) -> np.array:
     img = np.zeros((RES, RES, 3), dtype=np.float32)
     dist_to_hole = np.sqrt(cx * cx + cy * cy + cz * cz)
 
@@ -43,7 +44,7 @@ def compute_full_frame(
                     break
 
                 py_next = py + vy * DT
-                if py * py_next <= 0:
+                if abs(py) < 0.05 or py * py_next <= 0:
                     th = -py / (vy + 1e-9)
                     hx, hz = px + vx * th, pz + vz * th
                     r2_d = hx * hx + hz * hz
@@ -55,22 +56,30 @@ def compute_full_frame(
                         #     + 0.4 * np.sin(2.5 * rv + ang * 3.0)
                         # ) / 1.4
                         noise = (
-                            np.sin(1.5 * rv - ang * 2.0 + t * 4.0) * 0.5
-                            + np.sin(4.0 * rv + ang * 5.0 - t * 2.0) * 0.25
-                            + np.sin(8.0 * rv - ang * 10.0) * 0.12
+                            np.sin(3 * rv - ang * 1.5 + t * 4.0) * 0.5
+                            + np.sin(2.2 * rv + ang * 3.0 - t * 2.0) * 0.25
                         )
 
                         radial_boost = 120.0 / (rv**5 + 1.0)
 
-                        dop = 1.0 + 0.6 * np.sin(ang)
+                        dop = 1.0 + 0.67 * np.sin(ang)
+                        # dop = 1.0 + 0.9 * np.sin(ang)
                         # val = (1 + wave) * dop * radial_boost * np.exp(-0.02 * rv) * 3.2
                         val = (
                             (0.7 + noise)
                             * dop
                             * radial_boost
                             * np.exp(-0.03 * rv)
-                            * 4.5
+                            * 1.2  # 4.5
                         )
+
+                        # val = (
+                        #     (0.7 + noise)
+                        #     * (dop**2)
+                        #     * radial_boost
+                        #     * np.exp(-0.04 * rv)
+                        #     * 1.5
+                        # )
 
                         dist_hit = np.sqrt(
                             (hx - cx) ** 2 + (py - cy) ** 2 + (hz - cz) ** 2
@@ -83,7 +92,7 @@ def compute_full_frame(
                             if acc_light >= 1.0:
                                 break
                         else:
-                            val *= 0.8
+                            # val *= 0.23
                             inst += val * 0.43
 
                 a = -0.95 * RS / (r2 * r + 1e-6)
@@ -103,10 +112,12 @@ def compute_full_frame(
                 ps = np.exp(-2000 * (min_r - 1.01) ** 2) * 9.0
 
                 glow = np.exp(-1.2 * (min_r - 1.2) ** 2) * 0.6
-
-                r_c = inst * 5.0 + ps * 3.0 + glow * 1.5
-                g = inst * 3.5 + ps * 3.0 + glow * 0.8
-                b = inst * 2.2 + ps * 3.0 + glow * 0.4
+                r_c = inst * 4.0 + ps * 3.0 + glow * 1.5
+                g = inst * 3.2 * dop + ps * 3.0 + glow * 0.8
+                b = inst * 2.5 * (dop**2.5) + ps * 3.0 + glow * 0.4
+                # r_c = inst * 5.0 + ps * 3.0 + glow * 1.5
+                # g = inst * 3.5 + ps * 3.0 + glow * 0.8
+                # b = inst * 2.2 + ps * 3.0 + glow * 0.4
 
                 img[i, j, 0] = 1.0 - np.exp(-b)
                 img[i, j, 1] = 1.0 - np.exp(-g)
@@ -114,10 +125,10 @@ def compute_full_frame(
     return img
 
 
-def render():
-    RES = 350  # 500
-    STEPS = 700
-    DT = 0.12
+def render(args: Namespace) -> None:
+    RES = args.res  # 500
+    STEPS = args.steps  # 500
+    DT = args.dt  # 0.15
 
     y, x = np.ogrid[1 : -1 : complex(RES), -1 : 1 : complex(RES)]
 
@@ -127,13 +138,21 @@ def render():
 
     cv2.namedWindow("Black Hole")
     os.system("cls" if os.name == "nt" else "clear")
-    print("Запуск рендера...")
+    threads = args.numthreads
+    print(
+        f"""
+Запуск рендера в {threads} потоках...
+Разрешением: {args.res} пикселей
+Дистанция: {args.steps} ед.
+Длина шага: {args.dt} радиус Шварцшильда""",
+    )
+
     while True:
         start_t = time.time()
         t = (frame_idx / 300) * 2 * np.pi
 
         dist = 45.0
-        vertical_angle = -np.radians(18) * np.sin(t * 0.2)
+        vertical_angle = -np.radians(10) * np.sin(t * 0.2)
 
         horizontal_dist = dist * np.cos(vertical_angle)
         cx, cy, cz = (
@@ -152,7 +171,7 @@ def render():
         up_base = np.cross(rt_base, fw)
         up_base /= np.linalg.norm(up_base)
 
-        tilt_angle = (np.pi / 12) * np.sin(t * 0.3)
+        tilt_angle = (np.pi / 20) * np.sin(t * 0.3)
 
         rt = rt_base * np.cos(tilt_angle) + np.cross(fw, rt_base) * np.sin(tilt_angle)
         up = up_base * np.cos(tilt_angle) + np.cross(fw, up_base) * np.sin(tilt_angle)
@@ -194,8 +213,58 @@ def render():
 
 
 if __name__ == "__main__":
+    parser = ArgumentParser(
+        description="Рендер черной дыры Гаргантюа. Чтобы закрыть окно программы нажмите на q или esc",
+        formatter_class=ArgumentDefaultsHelpFormatter,
+        add_help=False,
+    )
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        default=SUPPRESS,
+        help="Вывести подсказки",
+    )
+    parser.add_argument(
+        "-nt",
+        "--numthreads",
+        type=int,
+        default=16,
+        choices=range(1, 65),
+        metavar="INT",
+        help="Кол-во потоков (1-64)",
+    )
 
+    parser.add_argument(
+        "-r",
+        "--res",
+        type=int,
+        default=500,
+        choices=range(1, 10001),
+        metavar="INT",
+        help="Разрешение окна(квадрат) (1-1000)",
+    )
+    parser.add_argument(
+        "-s",
+        "--steps",
+        type=int,
+        default=500,
+        metavar="INT",
+        help="Кол-во шагов лучей. Насколько далеко от камеры луч будет продолжать вычисления (при изменении этого параметра нужно пропорционально имзенять -d --dt)",
+    )
+    parser.add_argument(
+        "-d",
+        "--dt",
+        type=float,
+        default=0.15,
+        metavar="FLOAT",
+        help="Размер шага (Delta Time) (рекомендуется 0.05-0.3). Влияет на точность и плавность линий. С какой дискретностью (частотой) мы проверяем положение луча в пространстве (при изменении этого параметра нужно пропорционально имзенять -s --steps)",
+    )
     try:
-        render()
+        args = parser.parse_args()
+
+        set_num_threads(args.numthreads)
+
+        render(args)
     except Exception as e:
         print(f"\nОШИБКА ПРИ ЗАПУСКЕ: {e}")
