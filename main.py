@@ -50,16 +50,27 @@ def compute_full_frame(
                     if 3.5 < r2_d < 60.0:
                         rv = np.sqrt(r2_d)
                         ang = np.arctan2(hz, hx)
-                        wave = (
-                            np.sin(0.8 * rv - ang * 1.5 + t * 5.0)
-                            + 0.4 * np.sin(2.5 * rv + ang * 3.0)
-                        ) / 1.4
+                        # wave = (
+                        #     np.sin(0.8 * rv - ang * 1.5 + t * 5.0)
+                        #     + 0.4 * np.sin(2.5 * rv + ang * 3.0)
+                        # ) / 1.4
+                        noise = (
+                            np.sin(1.5 * rv - ang * 2.0 + t * 4.0) * 0.5
+                            + np.sin(4.0 * rv + ang * 5.0 - t * 2.0) * 0.25
+                            + np.sin(8.0 * rv - ang * 10.0) * 0.12
+                        )
 
                         radial_boost = 120.0 / (rv**5 + 1.0)
 
                         dop = 1.0 + 0.6 * np.sin(ang)
-                        # val = (1 + wave) * dop * radial_boost * np.exp(-0.05 * rv) * 2.3
-                        val = (1 + wave) * dop * radial_boost * np.exp(-0.02 * rv) * 3.2
+                        # val = (1 + wave) * dop * radial_boost * np.exp(-0.02 * rv) * 3.2
+                        val = (
+                            (0.7 + noise)
+                            * dop
+                            * radial_boost
+                            * np.exp(-0.03 * rv)
+                            * 4.5
+                        )
 
                         dist_hit = np.sqrt(
                             (hx - cx) ** 2 + (py - cy) ** 2 + (hz - cz) ** 2
@@ -67,12 +78,12 @@ def compute_full_frame(
                         dist_to_hole = np.sqrt(cx**2 + cy**2 + cz**2)
 
                         if dist_hit < dist_to_hole:
-                            inst += val * 1.6
+                            inst += val
                             acc_light += 0.75
                             if acc_light >= 1.0:
                                 break
                         else:
-                            val *= 0.167
+                            val *= 0.8
                             inst += val * 0.43
 
                 a = -0.95 * RS / (r2 * r + 1e-6)
